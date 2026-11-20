@@ -206,6 +206,7 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Reset-safe cycle totals derived from recorder long-term statistics
         self._lts_energy_cache: dict[str, dict[str, Any]] = {}
+        self._last_month_from_history: bool = False
 
         self.lookback_12_months_data: list[dict[str, Any]] | None = None
         self.bess_12_months_data: list[dict[str, Any]] | None = None
@@ -267,10 +268,11 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self.lifetime_solar_kwh = float(data["lifetime_solar_kwh"])
                 if data.get("lifetime_export_kwh", 0) > self.lifetime_export_kwh:
                     self.lifetime_export_kwh = float(data["lifetime_export_kwh"])
-                if data.get("last_month_bill_thb", 0) > self.last_month_bill_thb:
-                    self.last_month_bill_thb = float(data["last_month_bill_thb"])
-                if data.get("last_month_import_kwh", 0) > self.last_month_import_kwh:
-                    self.last_month_import_kwh = float(data["last_month_import_kwh"])
+                if not self._last_month_from_history:
+                    if data.get("last_month_bill_thb", 0) > self.last_month_bill_thb:
+                        self.last_month_bill_thb = float(data["last_month_bill_thb"])
+                    if data.get("last_month_import_kwh", 0) > self.last_month_import_kwh:
+                        self.last_month_import_kwh = float(data["last_month_import_kwh"])
 
                 # Restore outage tracking metrics
                 if data.get("total_outage_seconds") is not None and float(data.get("total_outage_seconds", 0)) > self.total_outage_seconds:
@@ -703,8 +705,13 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return total
 
     async def _async_populate_last_month_stats(self, now: datetime) -> None:
-        """Populate previous month's bill and volume from HA recorder if uninitialized."""
-        if self.last_month_import_kwh > 0.0 and self.last_month_bill_thb > 0.0:
+        """Populate previous month's bill and volume from HA recorder.
+
+        Recomputed once per startup from long-term statistics, so a value saved
+        by an older version (or by baseline subtraction on a daily-reset
+        sensor) is corrected rather than trusted forever.
+        """
+        if self._last_month_from_history:
             return
 
         if not self.import_sensor_id:
@@ -716,7 +723,12 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         prev_import = await self._async_lts_change_between(
             self.import_sensor_id, prev_billing_start_dt, billing_start_dt
         )
-        if prev_import is None:
+        if prev_import is not None:
+            self._last_month_from_history = True
+        elif self.last_month_import_kwh > 0.0 and self.last_month_bill_thb > 0.0:
+            # No statistics available: keep the stored value
+            return
+        else:
             # Fall back to meter readings (only valid for lifetime counters)
             base_prev = await self._async_get_sensor_baseline(self.import_sensor_id, prev_billing_start_dt)
             base_curr = await self._async_get_sensor_baseline(self.import_sensor_id, billing_start_dt)
