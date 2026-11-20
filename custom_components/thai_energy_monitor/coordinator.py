@@ -66,7 +66,12 @@ from .const import (
     VAT_RATE,
 )
 
+from .energy_math import partial_since_last_stat, summarize_hourly_changes
+
 _LOGGER = logging.getLogger(__name__)
+
+# How long compiled hourly statistics are reused before re-querying the recorder
+LTS_ENERGY_CACHE_SECONDS = 300
 
 # Created once at import time (integration modules load in an executor) so the
 # tz database is never read from disk on the event loop.
@@ -198,6 +203,9 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Tariff 1.1 >150 kWh consecutive high months tracking
         self.consecutive_high_months: int = 0
+
+        # Reset-safe cycle totals derived from recorder long-term statistics
+        self._lts_energy_cache: dict[str, dict[str, Any]] = {}
 
         self.lookback_12_months_data: list[dict[str, Any]] | None = None
         self.bess_12_months_data: list[dict[str, Any]] | None = None
@@ -598,6 +606,102 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception:
             return None
 
+    async def _async_lts_cycle_energy(
+        self, entity_id: str, now: datetime, curr_state: float
+    ) -> tuple[float, float, float | None] | None:
+        """Return (cycle_kwh, today_kwh, lifetime_kwh) from long-term statistics.
+
+        Works for lifetime counters and for counters that reset daily, because
+        the recorder's hourly ``change`` already accounts for meter resets.
+        Returns None when the sensor has no long-term statistics, so callers
+        can fall back to baseline subtraction.
+        """
+        if not entity_id:
+            return None
+
+        billing_start = self._get_billing_start_datetime(now)
+        today_start = self._get_today_start_datetime(now)
+        cache = self._lts_energy_cache.get(entity_id)
+
+        if (
+            cache is None
+            or cache["billing_start"] != billing_start
+            or cache["today_start"] != today_start
+            or (now - cache["fetched_at"]).total_seconds() > LTS_ENERGY_CACHE_SECONDS
+        ):
+            def _fetch() -> dict[str, list[dict[str, Any]]]:
+                return statistics_during_period(
+                    self.hass,
+                    # Start a little early so the last compiled meter state is
+                    # known even in the first hour of a new cycle
+                    start_time=billing_start - timedelta(hours=3),
+                    end_time=now,
+                    statistic_ids={entity_id},
+                    period="hour",
+                    units=None,
+                    types={"change", "state", "sum"},
+                )
+
+            try:
+                stats = await get_instance(self.hass).async_add_executor_job(_fetch)
+            except Exception as err:  # recorder not ready or sensor without statistics
+                _LOGGER.debug("Could not query LTS cycle energy for %s: %s", entity_id, err)
+                return None
+
+            rows = sorted(stats.get(entity_id, []) if stats else [], key=get_stat_sort_key)
+            summary = summarize_hourly_changes(
+                rows,
+                billing_start,
+                today_start,
+                lambda value: parse_stat_datetime(value, BKK_TZ),
+            )
+            if summary is None:
+                return None
+            cache = {
+                **summary,
+                "billing_start": billing_start,
+                "today_start": today_start,
+                "fetched_at": now,
+            }
+            self._lts_energy_cache[entity_id] = cache
+
+        partial = partial_since_last_stat(curr_state, cache["last_state"])
+        lifetime = cache["last_sum"] + partial if cache["last_sum"] is not None else None
+        return cache["monthly"] + partial, cache["today"] + partial, lifetime
+
+    async def _async_lts_change_between(
+        self, entity_id: str, start: datetime, end: datetime
+    ) -> float | None:
+        """Sum reset-safe hourly energy changes between two datetimes."""
+        if not entity_id:
+            return None
+
+        def _fetch() -> dict[str, list[dict[str, Any]]]:
+            return statistics_during_period(
+                self.hass,
+                start_time=start,
+                end_time=end,
+                statistic_ids={entity_id},
+                period="hour",
+                units=None,
+                types={"change"},
+            )
+
+        try:
+            stats = await get_instance(self.hass).async_add_executor_job(_fetch)
+        except Exception as err:
+            _LOGGER.debug("Could not query LTS change for %s: %s", entity_id, err)
+            return None
+        rows = stats.get(entity_id, []) if stats else []
+        if not rows:
+            return None
+        total = 0.0
+        for row in rows:
+            change = row.get("change")
+            if change is not None and change >= 0.0:
+                total += float(change)
+        return total
+
     async def _async_populate_last_month_stats(self, now: datetime) -> None:
         """Populate previous month's bill and volume from HA recorder if uninitialized."""
         if self.last_month_import_kwh > 0.0 and self.last_month_bill_thb > 0.0:
@@ -609,11 +713,17 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         billing_start_dt = self._get_billing_start_datetime(now)
         prev_billing_start_dt = self._get_billing_start_datetime(billing_start_dt - timedelta(days=1))
 
-        base_prev = await self._async_get_sensor_baseline(self.import_sensor_id, prev_billing_start_dt)
-        base_curr = await self._async_get_sensor_baseline(self.import_sensor_id, billing_start_dt)
+        prev_import = await self._async_lts_change_between(
+            self.import_sensor_id, prev_billing_start_dt, billing_start_dt
+        )
+        if prev_import is None:
+            # Fall back to meter readings (only valid for lifetime counters)
+            base_prev = await self._async_get_sensor_baseline(self.import_sensor_id, prev_billing_start_dt)
+            base_curr = await self._async_get_sensor_baseline(self.import_sensor_id, billing_start_dt)
+            if base_prev is not None and base_curr is not None and base_curr > base_prev:
+                prev_import = base_curr - base_prev
 
-        if base_prev is not None and base_curr is not None and base_curr > base_prev:
-            prev_import = base_curr - base_prev
+        if prev_import is not None and prev_import > 0.0:
             category = self.active_tariff_category
             ft_rate = float(self.config_data.get(CONF_FT_RATE, DEFAULT_FT_RATE))
 
@@ -1330,12 +1440,33 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             else:
                 self.today_export_kwh = 0.0
 
+        # Reset-safe totals from recorder long-term statistics. These override
+        # the baseline subtraction above, which undercounts sensors that reset
+        # daily (e.g. Solis "Daily Grid Import"). Falls back silently when a
+        # sensor has no statistics.
+        lts_lifetime: dict[str, float] = {}
+        for kind, entity_id, is_power, curr_val in (
+            ("import", self.import_sensor_id, is_import_power, curr_import),
+            ("solar", self.solar_sensor_id, is_solar_power, curr_solar),
+            ("export", self.export_sensor_id, is_export_power, curr_export),
+        ):
+            if is_power:
+                continue
+            lts = await self._async_lts_cycle_energy(entity_id, now, curr_val)
+            if lts is None:
+                continue
+            cycle_kwh, today_kwh, lifetime_kwh = lts
+            setattr(self, f"monthly_{kind}_kwh", cycle_kwh)
+            setattr(self, f"today_{kind}_kwh", today_kwh)
+            if lifetime_kwh is not None:
+                lts_lifetime[kind] = lifetime_kwh
+
         if not is_import_power:
-            self.lifetime_import_kwh = curr_import
+            self.lifetime_import_kwh = lts_lifetime.get("import", curr_import)
         if not is_export_power:
-            self.lifetime_export_kwh = curr_export
+            self.lifetime_export_kwh = lts_lifetime.get("export", curr_export)
         if not is_solar_power:
-            self.lifetime_solar_kwh = curr_solar
+            self.lifetime_solar_kwh = lts_lifetime.get("solar", curr_solar)
 
         # Split peak/off-peak consumption
         self.monthly_tou_offpeak_import_kwh = self.monthly_import_kwh * 0.60
