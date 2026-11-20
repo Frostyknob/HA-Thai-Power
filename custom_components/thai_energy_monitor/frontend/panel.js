@@ -49,13 +49,13 @@
       legend_fixed_service: "1. Fixed Service",
       legend_peak_charge: "2. Peak Base Charge",
       legend_offpeak_charge: "3. Off-Peak Base Charge",
-      legend_tier1: "2. Base Tier 1 (0-150)",
+      legend_tier1: "2. Base Tier 1 (0-200)",
       legend_tier2: "3. Base Tier 2 (151-400)",
       legend_tier3: "4. Base Tier 3 (>400)",
       legend_ft: "Ft Charge",
       legend_vat: "VAT (7%)",
       note_tou_progression: "Accurate progressive Time of Use billing cycle progression. Base Charge is split daily: Peak Charge (09:00 - 22:00, Mon-Fri) • Off-Peak Charge (all other hours, weekends, and holidays).",
-      note_tiered_progression: "Accurate progressive tiered billing cycle progression. Base Charge is split daily: Tier 1 (first 150 kWh) • Tier 2 (next 250 kWh) • Tier 3 (excess over 400 kWh).",
+      note_tiered_progression: "Accurate progressive tiered billing cycle progression. Base Charge is split daily: Tier 1 (first 200 kWh) • Tier 2 (next 200 kWh) • Tier 3 (excess over 400 kWh).",
 
       chart_daily_title: "Daily Grid Import vs Solar Production",
       show_volume_kwh: "Show Volume (kWh)",
@@ -171,7 +171,7 @@
       settings_custom_rates_desc: "Manually override statutory MEA/PEA base tariff rates (THB/kWh). Leave any field blank to automatically use official standard utility tariff schedules.",
       setting_tou_peak_rate: "TOU Peak Rate (THB/kWh)",
       setting_tou_offpeak_rate: "TOU Off-Peak Rate (THB/kWh)",
-      setting_tier1_rate: "Tier 1 Rate (0-150 kWh)",
+      setting_tier1_rate: "Tier 1 Rate (0-200 kWh)",
       setting_tier2_rate: "Tier 2 Rate (151-400 kWh)",
       setting_tier3_rate: "Tier 3 / Flat Rate (>400 kWh)",
       btn_save_settings: "💾 Save Configuration & Reload Integration",
@@ -253,13 +253,13 @@
       legend_fixed_service: "1. ค่าบริการรายเดือน",
       legend_peak_charge: "2. ค่าไฟฐานช่วง Peak",
       legend_offpeak_charge: "3. ค่าไฟฐานช่วง Off-Peak",
-      legend_tier1: "2. ค่าไฟฐานขั้นที่ 1 (0-150)",
+      legend_tier1: "2. ค่าไฟฐานขั้นที่ 1 (0-200)",
       legend_tier2: "3. ค่าไฟฐานขั้นที่ 2 (151-400)",
       legend_tier3: "4. ค่าไฟฐานขั้นที่ 3 (>400)",
       legend_ft: "ค่า Ft",
       legend_vat: "ภาษีมูลค่าเพิ่ม (7%)",
       note_tou_progression: "กราฟจำลองการสะสมค่าไฟตามรอบบิล TOU อย่างแม่นยำ โดยค่าไฟฐานจะแบ่งตามวัน: ช่วง Peak (09:00 - 22:00 จันทร์-ศุกร์) • ช่วง Off-Peak (เวลานอกเหนือจากนี้ วันเสาร์-อาทิตย์ และวันหยุดราชการ)",
-      note_tiered_progression: "กราฟจำลองการสะสมค่าไฟตามรอบบิลอัตราก้าวหน้า โดยค่าไฟฐานแบ่งเป็น: ขั้นที่ 1 (150 หน่วยแรก) • ขั้นที่ 2 (250 หน่วยถัดไป) • ขั้นที่ 3 (ส่วนที่เกิน 400 หน่วย)",
+      note_tiered_progression: "กราฟจำลองการสะสมค่าไฟตามรอบบิลอัตราก้าวหน้า โดยค่าไฟฐานแบ่งเป็น: ขั้นที่ 1 (200 หน่วยแรก) • ขั้นที่ 2 (200 หน่วยถัดไป) • ขั้นที่ 3 (ส่วนที่เกิน 400 หน่วย)",
 
       chart_daily_title: "เปรียบเทียบหน่วยนำเข้าจากสายส่งและการผลิตโซลาร์รายวัน",
       show_volume_kwh: "แสดงเป็นหน่วย (kWh)",
@@ -375,7 +375,7 @@
       settings_custom_rates_desc: "กำหนดอัตราค่าไฟฟ้าฐานของการไฟฟ้า (บาท/kWh) เอง หากเว้นว่างไว้ ระบบจะใช้อัตรามาตรฐานตามประกาศของการไฟฟ้าโดยอัตโนมัติ",
       setting_tou_peak_rate: "อัตรา TOU ช่วง Peak (บาท/kWh)",
       setting_tou_offpeak_rate: "อัตรา TOU ช่วง Off-Peak (บาท/kWh)",
-      setting_tier1_rate: "อัตราขั้นที่ 1 (0-150 kWh)",
+      setting_tier1_rate: "อัตราขั้นที่ 1 (0-200 kWh)",
       setting_tier2_rate: "อัตราขั้นที่ 2 (151-400 kWh)",
       setting_tier3_rate: "อัตราขั้นที่ 3 / อัตราคงที่ (>400 kWh)",
       btn_save_settings: "💾 บันทึกการตั้งค่าและเริ่มการทำงานใหม่",
@@ -731,7 +731,7 @@
     const totalBill = getEntityState(billEntityId) || getAttribute(billEntityId, 'monthly_estimated_bill') || '0.00';
     const baseCost = getEntityState('sensor.monthly_base_energy_cost') || getEntityState('sensor.monthly_base_cost') || getAttribute(billEntityId, 'monthly_base_cost') || '0.00';
     const ftCharge = getEntityState('sensor.monthly_ft_charge') || getAttribute(billEntityId, 'monthly_ft_charge') || '0.00';
-    const serviceCharge = getEntityState('sensor.monthly_fixed_service_charge') || getEntityState('sensor.monthly_service_charge') || getAttribute(billEntityId, 'monthly_service_charge') || '38.22';
+    const serviceCharge = getEntityState('sensor.monthly_fixed_service_charge') || getEntityState('sensor.monthly_service_charge') || getAttribute(billEntityId, 'monthly_service_charge') || '24.62';
     const vatAmount = getEntityState('sensor.monthly_calculated_vat_7') || getEntityState('sensor.monthly_vat_amount') || getAttribute(billEntityId, 'monthly_vat_amount') || '0.00';
 
     const projectedSolarKwh = getAttribute(billEntityId, 'projected_monthly_solar_kwh') || '0.00';
@@ -810,9 +810,10 @@
     const currentDay = parseInt(getAttribute(billEntityId, 'current_day_of_cycle')) || Math.min(30, Math.max(1, today.getDate()));
     const totalBaseNum = parseFloat(baseCost) || 0;
     const totalFtNum = parseFloat(ftCharge) || 0;
-    const totalServiceNum = parseFloat(serviceCharge) || 38.22;
+    const totalServiceNum = parseFloat(serviceCharge) || 24.62;
     const totalVatNum = parseFloat(vatAmount) || 0;
-    const ftRate = getAttribute(billEntityId, 'ft_rate') || 0.395;
+    const ftRateRaw = parseFloat(getAttribute(billEntityId, 'ft_rate'));
+    const ftRate = isNaN(ftRateRaw) ? 0.1623 : ftRateRaw;
     const tariffCategory = getAttribute(billEntityId, 'tariff_category') || '1.2';
     const enableSolarSellback = getAttribute(billEntityId, 'enable_solar_sellback') !== false;
     const sellbackRate = getAttribute(billEntityId, 'solar_sellback_rate') || 2.20;
@@ -821,8 +822,37 @@
 
     // Check if active tariff is TOU (Time of Use 1.3.1 or 1.3.2)
     const isTou = tariffCategory.startsWith('1.3');
-    const peakRate = tariffCategory === '1.3.1' ? 5.2636 : 5.7982;
-    const offpeakRate = tariffCategory === '1.3.1' ? 2.6295 : 2.6369;
+    // Rates come from the backend so the dashboard never drifts from the bill engine
+    const peakRate = parseFloat(getAttribute(billEntityId, 'tou_peak_rate')) || (tariffCategory === '1.3.1' ? 5.1135 : 5.7982);
+    const offpeakRate = parseFloat(getAttribute(billEntityId, 'tou_offpeak_rate')) || (tariffCategory === '1.3.1' ? 2.6037 : 2.6369);
+
+    // Progressive tier table [[lower, upper|null, rate], ...] (Sep 2026 structure as fallback)
+    const attrTiers = getAttribute(billEntityId, 'tariff_tiers');
+    const tariffTiers = (Array.isArray(attrTiers) && attrTiers.length >= 3)
+      ? attrTiers
+      : [[0, 200, 3.0], [200, 400, 4.1584], [400, null, 4.3583]];
+    // Collapse the table into three display segments: every band below the
+    // second-to-last one is "tier 1", then the last two bands are tiers 2 and 3.
+    const splitTierCosts = (kwh) => {
+      const out = [0, 0, 0];
+      const n = tariffTiers.length;
+      tariffTiers.forEach((t, i) => {
+        const lower = Number(t[0]);
+        const upper = (t[1] === null || t[1] === undefined) ? Infinity : Number(t[1]);
+        const used = Math.max(0, Math.min(kwh, upper) - lower);
+        const seg = i >= n - 1 ? 2 : (i === n - 2 ? 1 : 0);
+        out[seg] += used * Number(t[2]);
+      });
+      return out;
+    };
+    const marginalTierRate = (kwh) => {
+      for (const t of tariffTiers) {
+        const upper = (t[1] === null || t[1] === undefined) ? Infinity : Number(t[1]);
+        if (kwh < upper) return Number(t[2]);
+      }
+      return Number(tariffTiers[tariffTiers.length - 1][2]);
+    };
+    const avoidedCost = (rate) => (rate + ftRate) * (1 + VAT_RATE);
 
     const importKwhNum = parseFloat(importKwh) || 0;
     const nowTime = new Date();
@@ -898,13 +928,7 @@
         dayOffpeakCost = dayOffpeakKwh * offpeakRate;
       } else {
         // Calculate progressive tiers for this day's cumulative runningKwh
-        const t1Kwh = Math.min(item.runningKwh, 150);
-        const t2Kwh = Math.max(0, Math.min(item.runningKwh - 150, 250));
-        const t3Kwh = Math.max(0, item.runningKwh - 400);
-
-        t1Val = t1Kwh * 3.2482;
-        t2Val = t2Kwh * 4.2218;
-        t3Val = t3Kwh * 4.4217;
+        [t1Val, t2Val, t3Val] = splitTierCosts(item.runningKwh);
         bVal = t1Val + t2Val + t3Val;
       }
 
@@ -925,6 +949,7 @@
         dayOffpeakCost: dayOffpeakCost,
         isWeekend: isWeekend,
         dayKwh: item.dayKwh,
+        runningKwh: item.runningKwh,
         ft: fVal,
         vat: vVal,
         total: dayCumulativeTotal,
@@ -975,8 +1000,8 @@
 
       // Compute daily solar financial benefit = (self consumed * retail rate) + (export * sellback rate)
       const activeRetailRate = isTou
-        ? (0.40 * peakRate + 0.60 * offpeakRate)
-        : (bar.tier3 > 0 ? 4.4217 : (bar.tier2 > 0 ? 4.2218 : 3.2482));
+        ? avoidedCost(0.40 * peakRate + 0.60 * offpeakRate)
+        : avoidedCost(marginalTierRate(bar.runningKwh || 0));
       const solBenefit = (selfKwh * activeRetailRate) + (expKwh * effectiveSellbackRate);
 
       dailyBreakdown.push({
@@ -1065,13 +1090,7 @@
       peakPct = totalBillNum > 0 ? ((currentPeakVal / totalBillNum) * 100).toFixed(1) : 0;
       offpeakPct = totalBillNum > 0 ? ((currentOffpeakVal / totalBillNum) * 100).toFixed(1) : 0;
     } else {
-      const currentT1Kwh = Math.min(importKwhVal, 150);
-      const currentT2Kwh = Math.max(0, Math.min(importKwhVal - 150, 250));
-      const currentT3Kwh = Math.max(0, importKwhVal - 400);
-
-      const currentT1Val = currentT1Kwh * 3.2482;
-      const currentT2Val = currentT2Kwh * 4.2218;
-      const currentT3Val = currentT3Kwh * 4.4217;
+      const [currentT1Val, currentT2Val, currentT3Val] = splitTierCosts(importKwhVal);
 
       t1Pct = totalBillNum > 0 ? ((currentT1Val / totalBillNum) * 100).toFixed(1) : 0;
       t2Pct = totalBillNum > 0 ? ((currentT2Val / totalBillNum) * 100).toFixed(1) : 0;
@@ -1114,7 +1133,7 @@
       lifetimeSolar: getEntityState('sensor.lifetime_solar_production_energy'),
       marginalRate: getEntityState('sensor.active_marginal_retail_rate'),
       gridPrice: getEntityState('sensor.current_grid_energy_import_price'),
-      ftRate: getEntityState('sensor.current_ft_adjustment_rate') || getAttribute(billEntityId, 'ft_rate') || '0.3950',
+      ftRate: getEntityState('sensor.current_ft_adjustment_rate') || getAttribute(billEntityId, 'ft_rate') || '0.1623',
       sellbackRate: getEntityState('sensor.solar_buy_back_rate') || getAttribute(billEntityId, 'solar_sellback_rate') || '2.20',
       effectiveSellbackRate: effectiveSellbackRate,
       enableSolarSellback: enableSolarSellback,
@@ -1610,8 +1629,8 @@
         const tariffCategory = shadow.getElementById('setting-tariff-category')?.value || '1.2';
         let billingDay = parseInt(shadow.getElementById('setting-billing-day')?.value || '1', 10);
         if (isNaN(billingDay)) billingDay = 1;
-        let ftRate = parseFloat(shadow.getElementById('setting-ft-rate')?.value || '0.3950');
-        if (isNaN(ftRate)) ftRate = 0.3950;
+        let ftRate = parseFloat(shadow.getElementById('setting-ft-rate')?.value || '0.1623');
+        if (isNaN(ftRate)) ftRate = 0.1623;
         let sellbackRate = parseFloat(shadow.getElementById('setting-sellback-rate')?.value || '2.20');
         if (isNaN(sellbackRate)) sellbackRate = 2.20;
         const enableSolarSellback = shadow.getElementById('setting-enable-solar-sellback')?.checked !== false;
@@ -3323,15 +3342,15 @@
               </div>
               <div>
                 <label style="display: block; font-size: 12px; color: #9e9e9e; margin-bottom: 6px;">${this.t('setting_tier1_rate')}</label>
-                <input type="number" id="setting-custom-tier1-rate" value="${d.customTier1Rate}" placeholder="Default: 3.2484" step="0.0001" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--divider-color, rgba(255,255,255,0.12)); background-color: rgba(0,0,0,0.25); color: #fff; box-sizing: border-box; font-size: 14px; outline: none;" />
+                <input type="number" id="setting-custom-tier1-rate" value="${d.customTier1Rate}" placeholder="Default: 3.0000" step="0.0001" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--divider-color, rgba(255,255,255,0.12)); background-color: rgba(0,0,0,0.25); color: #fff; box-sizing: border-box; font-size: 14px; outline: none;" />
               </div>
               <div>
                 <label style="display: block; font-size: 12px; color: #9e9e9e; margin-bottom: 6px;">${this.t('setting_tier2_rate')}</label>
-                <input type="number" id="setting-custom-tier2-rate" value="${d.customTier2Rate}" placeholder="Default: 4.2233" step="0.0001" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--divider-color, rgba(255,255,255,0.12)); background-color: rgba(0,0,0,0.25); color: #fff; box-sizing: border-box; font-size: 14px; outline: none;" />
+                <input type="number" id="setting-custom-tier2-rate" value="${d.customTier2Rate}" placeholder="Default: 4.1584" step="0.0001" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--divider-color, rgba(255,255,255,0.12)); background-color: rgba(0,0,0,0.25); color: #fff; box-sizing: border-box; font-size: 14px; outline: none;" />
               </div>
               <div>
                 <label style="display: block; font-size: 12px; color: #9e9e9e; margin-bottom: 6px;">${this.t('setting_tier3_rate')}</label>
-                <input type="number" id="setting-custom-tier3-rate" value="${d.customTier3Rate}" placeholder="Default: 4.4217" step="0.0001" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--divider-color, rgba(255,255,255,0.12)); background-color: rgba(0,0,0,0.25); color: #fff; box-sizing: border-box; font-size: 14px; outline: none;" />
+                <input type="number" id="setting-custom-tier3-rate" value="${d.customTier3Rate}" placeholder="Default: 4.3583" step="0.0001" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--divider-color, rgba(255,255,255,0.12)); background-color: rgba(0,0,0,0.25); color: #fff; box-sizing: border-box; font-size: 14px; outline: none;" />
               </div>
             </div>
           </div>

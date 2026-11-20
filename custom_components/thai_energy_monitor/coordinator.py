@@ -406,10 +406,47 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @property
     def active_tiered_1_2_tiers(self) -> list[tuple[float, float, float]]:
         """Return active Tiered 1.2 rate tiers, using custom overrides if configured."""
-        t1 = float(self.config_data.get("custom_tier1_rate") or 3.2484)
-        t2 = float(self.config_data.get("custom_tier2_rate") or 4.2233)
-        t3 = float(self.config_data.get("custom_tier3_rate") or 4.4217)
-        return [(0.0, 150.0, t1), (150.0, 400.0, t2), (400.0, float("inf"), t3)]
+        defaults = TARIFF_1_2_TIERS
+        overrides = (
+            self.config_data.get("custom_tier1_rate"),
+            self.config_data.get("custom_tier2_rate"),
+            self.config_data.get("custom_tier3_rate"),
+        )
+        tiers: list[tuple[float, float, float]] = []
+        for (lower, upper, default_rate), override in zip(defaults, overrides):
+            rate = default_rate
+            if override is not None:
+                try:
+                    val = float(override)
+                    if val > 0:
+                        rate = val
+                except (ValueError, TypeError):
+                    pass
+            tiers.append((lower, upper, rate))
+        return tiers
+
+    @property
+    def active_tiers(self) -> list[tuple[float, float, float]]:
+        """Return the progressive tier table for the active (non-TOU) category."""
+        if self.active_tariff_category == TARIFF_1_1:
+            return TARIFF_1_1_TIERS
+        return self.active_tiered_1_2_tiers
+
+    @property
+    def active_service_charge(self) -> float:
+        """Return the monthly service charge (THB) for the active tariff category."""
+        return {
+            TARIFF_1_1: TARIFF_1_1_SERVICE_CHARGE,
+            TARIFF_1_2: TARIFF_1_2_SERVICE_CHARGE,
+            TARIFF_1_3_1: TARIFF_1_3_1_SERVICE_CHARGE,
+            TARIFF_1_3_2: TARIFF_1_3_2_SERVICE_CHARGE,
+        }.get(self.active_tariff_category, TARIFF_1_2_SERVICE_CHARGE)
+
+    def avoided_cost_per_kwh(self, base_rate: float, ft_rate: float | None = None) -> float:
+        """Return the full retail cost avoided per kWh: base rate plus Ft, plus 7% VAT."""
+        if ft_rate is None:
+            ft_rate = float(self.config_data.get(CONF_FT_RATE, DEFAULT_FT_RATE))
+        return (base_rate + ft_rate) * (1.0 + VAT_RATE)
 
     @property
     def active_tou_peak_rate(self) -> float:
@@ -460,17 +497,15 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     return rate
             return TARIFF_1_1_TIERS[-1][2]
 
-        elif category == TARIFF_1_2:
-            active_tiers = self.active_tiered_1_2_tiers
-            for lower, upper, rate in active_tiers:
-                if lower <= current_kwh < upper:
-                    return rate
-            return active_tiers[-1][2]
-
         elif category in (TARIFF_1_3_1, TARIFF_1_3_2):
             return self.active_tou_offpeak_rate if is_offpeak else self.active_tou_peak_rate
 
-        return self.active_tiered_1_2_tiers[0][2]
+        # Tariff 1.2 and any unrecognised category fall back to the 1.2 table
+        active_tiers = self.active_tiered_1_2_tiers
+        for lower, upper, rate in active_tiers:
+            if lower <= current_kwh < upper:
+                return rate
+        return active_tiers[-1][2]
 
     def _get_billing_start_datetime(self, now: datetime) -> datetime:
         """Calculate exact datetime for the start of the current billing cycle."""
@@ -582,27 +617,20 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             category = self.active_tariff_category
             ft_rate = float(self.config_data.get(CONF_FT_RATE, DEFAULT_FT_RATE))
 
+            service_charge = self.active_service_charge
             if category == TARIFF_1_1:
-                service_charge = TARIFF_1_1_SERVICE_CHARGE
                 base_cost = (
                     self.calculate_tiered_cost(prev_import, TARIFF_1_1_TIERS)
                     if prev_import > TARIFF_1_1_PSO_SUBSIDY_LIMIT
                     else 0.0
                 )
-            elif category == TARIFF_1_2:
-                service_charge = TARIFF_1_2_SERVICE_CHARGE
-                base_cost = self.calculate_tiered_cost(prev_import, self.active_tiered_1_2_tiers)
             elif category in (TARIFF_1_3_1, TARIFF_1_3_2):
-                service_charge = (
-                    TARIFF_1_3_1_SERVICE_CHARGE if category == TARIFF_1_3_1 else TARIFF_1_3_2_SERVICE_CHARGE
-                )
                 peak_ratio = 0.20 if self.monthly_solar_kwh > 5.0 else 0.40
                 base_cost = (
                     (prev_import * peak_ratio) * self.active_tou_peak_rate
                 ) + ((prev_import * (1.0 - peak_ratio)) * self.active_tou_offpeak_rate)
             else:
-                service_charge = 24.62
-                base_cost = prev_import * 4.4217
+                base_cost = self.calculate_tiered_cost(prev_import, self.active_tiered_1_2_tiers)
 
             ft_charge = prev_import * ft_rate
             subtotal = base_cost + service_charge + ft_charge
@@ -737,8 +765,8 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Rates including Ft & VAT
         if tariff_model == "normal":
-            # Normal Tiered Tariff: flat rate (using 4.4217 as standard flat rate)
-            flat_rate = 4.4217
+            # Normal Tiered Tariff: value shifted energy at the top tier rate
+            flat_rate = self.active_tiered_1_2_tiers[-1][2]
             retail_cost_kwh = (flat_rate + ft_rate) * vat_mult
 
             # Solar charging only (grid charging makes no financial sense for flat rates)
@@ -887,6 +915,10 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         all_hours = sorted(set(list(import_hourly.keys()) + list(solar_hourly.keys()) + list(export_hourly.keys())))
 
+        # Self-consumed solar avoids the full retail price (base + Ft + VAT)
+        peak_avoided = self.avoided_cost_per_kwh(self.active_tou_peak_rate)
+        offpeak_avoided = self.avoided_cost_per_kwh(self.active_tou_offpeak_rate)
+
         for h_dt in all_hours:
             if h_dt < start_dt or h_dt >= today_start_dt:
                 continue
@@ -909,11 +941,11 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if is_peak:
                 past_peak_import_kwh += imp_kwh
                 past_peak_base_cost_thb += imp_kwh * self.active_tou_peak_rate
-                past_solar_savings_thb += self_kwh * self.active_tou_peak_rate
+                past_solar_savings_thb += self_kwh * peak_avoided
             else:
                 past_offpeak_import_kwh += imp_kwh
                 past_offpeak_base_cost_thb += imp_kwh * self.active_tou_offpeak_rate
-                past_solar_savings_thb += self_kwh * self.active_tou_offpeak_rate
+                past_solar_savings_thb += self_kwh * offpeak_avoided
 
         # Build 30-day arrays for charts (completed past days, today, projected future days)
         def build_daily_series(
@@ -1320,13 +1352,18 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         
         current_grid_price = marginal_rate + ft_rate
 
-        self.monthly_solar_savings_thb = curr_self_consumption * marginal_rate
+        # Self-consumed solar avoids the full retail price: base rate + Ft, plus 7% VAT
+        savings_rate = self.avoided_cost_per_kwh(marginal_rate, ft_rate)
+        peak_avoided = self.avoided_cost_per_kwh(self.active_tou_peak_rate, ft_rate)
+        offpeak_avoided = self.avoided_cost_per_kwh(self.active_tou_offpeak_rate, ft_rate)
+
+        self.monthly_solar_savings_thb = curr_self_consumption * savings_rate
 
         lifetime_self_consumption = max(0.0, self.lifetime_solar_kwh - self.lifetime_export_kwh)
         if category in (TARIFF_1_3_1, TARIFF_1_3_2):
-            lifetime_savings_rate = (0.70 * self.active_tou_peak_rate) + (0.30 * self.active_tou_offpeak_rate)
+            lifetime_savings_rate = (0.70 * peak_avoided) + (0.30 * offpeak_avoided)
         else:
-            lifetime_savings_rate = marginal_rate
+            lifetime_savings_rate = savings_rate
 
         self.lifetime_solar_savings_thb = lifetime_self_consumption * lifetime_savings_rate
 
@@ -1436,9 +1473,9 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         today_offpeak_cost = today_offpeak_import * self.active_tou_offpeak_rate
 
         if category in (TARIFF_1_3_1, TARIFF_1_3_2):
-            today_savings = (today_peak_self * self.active_tou_peak_rate) + (today_offpeak_self * self.active_tou_offpeak_rate)
+            today_savings = (today_peak_self * peak_avoided) + (today_offpeak_self * offpeak_avoided)
         else:
-            today_savings = today_self_kwh * marginal_rate
+            today_savings = today_self_kwh * savings_rate
 
         # 4. Total Accrued Usage, Base Costs, and Bill to Date
         total_peak_import_kwh = past_peak_import_kwh + today_peak_import
@@ -1456,19 +1493,13 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 accrued_base_cost = 0.0
             else:
                 accrued_base_cost = self.calculate_tiered_cost(self.monthly_import_kwh, TARIFF_1_1_TIERS)
-            self.monthly_solar_savings_thb = (self.monthly_solar_kwh - self.monthly_export_kwh) * marginal_rate
-        elif category == TARIFF_1_2:
+            self.monthly_solar_savings_thb = max(0.0, self.monthly_solar_kwh - self.monthly_export_kwh) * savings_rate
+        else:
             accrued_base_cost = self.calculate_tiered_cost(self.monthly_import_kwh, self.active_tiered_1_2_tiers)
-            self.monthly_solar_savings_thb = (self.monthly_solar_kwh - self.monthly_export_kwh) * marginal_rate
+            self.monthly_solar_savings_thb = max(0.0, self.monthly_solar_kwh - self.monthly_export_kwh) * savings_rate
 
         accrued_ft_charge = self.monthly_import_kwh * ft_rate
-        service_charge = (
-            TARIFF_1_1_SERVICE_CHARGE if category == TARIFF_1_1 else (
-                TARIFF_1_2_SERVICE_CHARGE if category == TARIFF_1_2 else (
-                    TARIFF_1_3_1_SERVICE_CHARGE if category == TARIFF_1_3_1 else TARIFF_1_3_2_SERVICE_CHARGE
-                )
-            )
-        )
+        service_charge = self.active_service_charge
 
         billing_start_dt = self._get_billing_start_datetime(now)
         elapsed_sec = max(60.0, (now - billing_start_dt).total_seconds())
@@ -1482,9 +1513,9 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Lifetime Continuous Accumulator Updates
         lifetime_self_consumption = max(0.0, self.lifetime_solar_kwh - self.lifetime_export_kwh)
         if category in (TARIFF_1_3_1, TARIFF_1_3_2):
-            lifetime_savings_rate = (0.70 * self.active_tou_peak_rate) + (0.30 * self.active_tou_offpeak_rate)
+            lifetime_savings_rate = (0.70 * peak_avoided) + (0.30 * offpeak_avoided)
         else:
-            lifetime_savings_rate = marginal_rate
+            lifetime_savings_rate = savings_rate
 
         self.lifetime_solar_savings_thb = lifetime_self_consumption * lifetime_savings_rate
         monthly_solar_revenue_thb = self.monthly_export_kwh * sellback_rate
@@ -1530,7 +1561,7 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 base_cost = 0.0
             else:
                 base_cost = self.calculate_tiered_cost(projected_monthly_import, TARIFF_1_1_TIERS)
-        elif category == TARIFF_1_2:
+        else:
             base_cost = self.calculate_tiered_cost(projected_monthly_import, self.active_tiered_1_2_tiers)
 
         subtotal = base_cost + service_charge + monthly_ft_charge
@@ -1629,13 +1660,13 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if category in (TARIFF_1_3_1, TARIFF_1_3_2):
                     today_is_workday = is_today_weekday and not (self.th_holidays and now.date() in self.th_holidays)
                     if today_is_workday:
-                        today_rem_savings = (0.90 * dampened_rem_today * self.active_tou_peak_rate) + (
-                            0.10 * dampened_rem_today * self.active_tou_offpeak_rate
+                        today_rem_savings = (0.90 * dampened_rem_today * peak_avoided) + (
+                            0.10 * dampened_rem_today * offpeak_avoided
                         )
                     else:
-                        today_rem_savings = dampened_rem_today * self.active_tou_offpeak_rate
+                        today_rem_savings = dampened_rem_today * offpeak_avoided
                 else:
-                    today_rem_savings = dampened_rem_today * marginal_rate
+                    today_rem_savings = dampened_rem_today * savings_rate
                 solcast_forward_savings_thb += today_rem_savings
 
             if solcast_found and forward_days:
@@ -1653,13 +1684,13 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                     if category in (TARIFF_1_3_1, TARIFF_1_3_2):
                         if f_is_workday:
-                            day_savings = (0.90 * day_kwh * self.active_tou_peak_rate) + (
-                                0.10 * day_kwh * self.active_tou_offpeak_rate
+                            day_savings = (0.90 * day_kwh * peak_avoided) + (
+                                0.10 * day_kwh * offpeak_avoided
                             )
                         else:
-                            day_savings = day_kwh * self.active_tou_offpeak_rate
+                            day_savings = day_kwh * offpeak_avoided
                     else:
-                        day_savings = day_kwh * marginal_rate
+                        day_savings = day_kwh * savings_rate
 
                     solcast_forward_savings_thb += day_savings
 
@@ -1788,6 +1819,12 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "effective_solar_sellback_rate": sellback_rate,
             "enable_solar_sellback": enable_solar_sellback,
             "active_tariff_category": self.active_tariff_category,
+            "tariff_tiers": [
+                [lower, None if upper == float("inf") else upper, rate]
+                for lower, upper, rate in self.active_tiers
+            ],
+            "tou_peak_rate": self.active_tou_peak_rate,
+            "tou_offpeak_rate": self.active_tou_offpeak_rate,
 
             # Predictive & Simulation Analytics
             "opposing_tariff_name": opposing_tariff_name,
@@ -1887,6 +1924,12 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         lookback_data = []
         ft_rate = float(self.config_data.get(CONF_FT_RATE, DEFAULT_FT_RATE))
+        if self.active_tariff_category == TARIFF_1_3_2:
+            lookback_peak_rate = self.active_tou_peak_rate
+            lookback_offpeak_rate = self.active_tou_offpeak_rate
+        else:
+            lookback_peak_rate = TARIFF_1_3_2_PEAK
+            lookback_offpeak_rate = TARIFF_1_3_2_OFFPEAK
 
         # Enforce strictly the most recent 12 billing months
         for month_key in sorted(monthly_groups.keys())[-12:]:
@@ -1896,12 +1939,12 @@ class ThaiEnergyDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             offpeak_kwh = stats["offpeak"]
 
             # Tiered 1.2 calculation
-            tiered_base = self.calculate_tiered_cost(total_kwh, TARIFF_1_2_TIERS)
+            tiered_base = self.calculate_tiered_cost(total_kwh, self.active_tiered_1_2_tiers)
             tiered_subtotal = tiered_base + TARIFF_1_2_SERVICE_CHARGE + (total_kwh * ft_rate)
             tiered_total = tiered_subtotal * (1 + VAT_RATE)
 
             # TOU 1.3.2 calculation
-            tou_base = (peak_kwh * 5.7982) + (offpeak_kwh * 2.6369)
+            tou_base = (peak_kwh * lookback_peak_rate) + (offpeak_kwh * lookback_offpeak_rate)
             tou_subtotal = tou_base + TARIFF_1_3_2_SERVICE_CHARGE + (total_kwh * ft_rate)
             tou_total = tou_subtotal * (1 + VAT_RATE)
 

@@ -10,7 +10,7 @@ from typing import Final
 # Integration Domain & Identifiers
 DOMAIN: Final[str] = "thai_energy_monitor"
 ATTRIBUTION: Final[str] = "Data provided by Thailand Energy & Solar Monitor"
-VERSION: Final[str] = "2.7.0"
+VERSION: Final[str] = "2.8.0"
 
 # Configuration Entry Keys
 CONF_UTILITY_PROVIDER: Final[str] = "utility_provider"
@@ -57,31 +57,36 @@ TARIFF_CATEGORIES: Final[list[str]] = [
 VAT_RATE: Final[float] = 0.07
 
 # Financial Parameter Default Values (in THB)
-DEFAULT_FT_RATE: Final[float] = 0.3950          # Ft charge THB/kWh (e.g. May-Aug 2026 baseline)
+DEFAULT_FT_RATE: Final[float] = 0.1623          # Ft charge THB/kWh (ERC: May-Aug and Sep-Dec 2026 = 16.23 satang)
+# Sanity bounds for any Ft value fetched automatically (THB/kWh)
+FT_RATE_MIN: Final[float] = -1.0
+FT_RATE_MAX: Final[float] = 2.0
 DEFAULT_SOLAR_SELLBACK: Final[float] = 2.20     # Solar Prachachon net billing buy-back rate THB/kWh
 DEFAULT_ENABLE_SOLAR_SELLBACK: Final[bool] = True # Whether solar sellback buy-back contract is active
 DEFAULT_OUTAGE_COST_PER_KWH: Final[float] = 308.41 # Macroeconomic outage loss metric THB/kWh
 
-# Tariff 1.1 - Tiered Rates (THB/kWh) and Fixed Service Charge (THB/month)
+# Progressive residential rates effective from the September 2026 billing cycle
+# (ERC decision: first 200 units capped at 3.00 THB, public-lighting cost of
+# 0.0634 THB removed from units 201+). Source: MEA/PEA announcements, Aug 2026.
+
+# Tariff 1.1 (meter <= 5 A) - Tiered Rates (THB/kWh) and Fixed Service Charge (THB/month)
 TARIFF_1_1_TIERS: Final[list[tuple[float, float, float]]] = [
     (0.0, 15.0, 2.3488),
     (15.0, 25.0, 2.9882),
-    (25.0, 35.0, 3.2405),
-    (35.0, 100.0, 3.6237),
-    (100.0, 150.0, 3.7171),
-    (150.0, 400.0, 4.2218),
-    (400.0, float("inf"), 4.4217),
+    (25.0, 200.0, 3.0000),
+    (200.0, 400.0, 4.1584),
+    (400.0, float("inf"), 4.3583),
 ]
 TARIFF_1_1_SERVICE_CHARGE: Final[float] = 8.19
 TARIFF_1_1_PSO_SUBSIDY_LIMIT: Final[float] = 50.0 # Public Service Obligation free limit (kWh)
 
-# Tariff 1.2 - Tiered Rates (THB/kWh) and Fixed Service Charge (THB/month)
+# Tariff 1.2 (meter > 5 A) - Tiered Rates (THB/kWh) and Fixed Service Charge (THB/month)
 TARIFF_1_2_TIERS: Final[list[tuple[float, float, float]]] = [
-    (0.0, 150.0, 3.2482),
-    (150.0, 400.0, 4.2218),
-    (400.0, float("inf"), 4.4217),
+    (0.0, 200.0, 3.0000),
+    (200.0, 400.0, 4.1584),
+    (400.0, float("inf"), 4.3583),
 ]
-TARIFF_1_2_SERVICE_CHARGE: Final[float] = 38.22
+TARIFF_1_2_SERVICE_CHARGE: Final[float] = 24.62
 
 # Tariff 1.3.1 - Time of Use (TOU 12-24 kV)
 TARIFF_1_3_1_PEAK: Final[float] = 5.1135

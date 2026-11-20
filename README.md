@@ -11,14 +11,15 @@ A comprehensive custom Home Assistant integration designed to monitor, calculate
 ## ⚡ Key Features
 
 - **Full Thai Tariff Schedules**:
-  - **Tariff 1.1**: Progressive 7-tier rate (≤ 150 kWh/month) with Public Service Obligation (PSO) free electricity tracking and reclassification warnings.
-  - **Tariff 1.2**: Progressive 3-tier rate (> 150 kWh/month).
+  - Progressive rates follow the **September 2026 ERC restructure**: first 200 units capped at 3.00 THB, 4.1584 THB for units 201–400 and 4.3583 THB from unit 401.
+  - **Tariff 1.1** (meter ≤ 5 A): 5 bands (2.3488 / 2.9882 / 3.00 / 4.1584 / 4.3583) with Public Service Obligation (PSO) free electricity tracking and reclassification warnings.
+  - **Tariff 1.2** (meter > 5 A): 3 bands (3.00 / 4.1584 / 4.3583).
   - **Tariff 1.3**: Time of Use (TOU) rates (1.3.1 12–24 kV and 1.3.2 < 12 kV) with dynamic Thai National Holiday resolution via `holidays.TH()`.
 - **Exact 2-Pass Daily TOU Calculation**:
   - Automatically splits past and present days into Peak and Off-Peak windows based on calendar dates (Weekdays vs Weekends/Holidays) and daytime solar production.
   - Independently computes and combines Peak and Off-Peak consumption and savings for 100% mathematical transparency and stability.
 - **Automated Daily Ft Rate Sync (3:00 AM)**:
-  - Connects to the official **MEA Open Data CKAN API** to dynamically update your Fuel Adjustment Charge (Ft) every morning at 3:00 AM.
+  - Connects to the official **MEA Open Data CKAN API** to dynamically update your Fuel Adjustment Charge (Ft) every morning at 3:00 AM. The fetched value is only applied when the dataset has a row for the current month, so a stale dataset never overwrites a correct manual Ft.
 - **Solar Prachachon (Net Billing)**:
   - High-precision numerical integration for instantaneous self-consumption savings.
   - Solar buy-back grid export monetization at the statutory wholesale rate (2.20 THB/kWh).

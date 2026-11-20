@@ -56,16 +56,18 @@ class TestThaiEnergyMonitorCore(unittest.TestCase):
         self.assertEqual(base_cost, 0.0)
 
     def test_tariff_1_1_full_tier_progression(self) -> None:
-        """Test Tariff 1.1 across all 7 progressive consumption tiers (500 kWh)."""
+        """Test Tariff 1.1 across all 5 progressive tiers (Sep 2026 structure, 500 kWh)."""
         consumption_kwh = 500.0
         base_cost = calculate_tiered_cost(consumption_kwh, TARIFF_1_1_TIERS)
-        self.assertAlmostEqual(base_cost, 2016.5345, places=4)
+        # 15*2.3488 + 10*2.9882 + 175*3.00 + 200*4.1584 + 100*4.3583
+        self.assertAlmostEqual(base_cost, 1857.624, places=4)
 
     def test_tariff_1_2_tier_progression(self) -> None:
         """Test Tariff 1.2 across all 3 progressive consumption tiers (500 kWh)."""
         consumption_kwh = 500.0
         base_cost = calculate_tiered_cost(consumption_kwh, TARIFF_1_2_TIERS)
-        self.assertAlmostEqual(base_cost, 1984.85, places=2)
+        # 200*3.00 + 200*4.1584 + 100*4.3583
+        self.assertAlmostEqual(base_cost, 1867.51, places=2)
 
     def test_tou_tariff_1_3_1_cost(self) -> None:
         """Test TOU Tariff 1.3.1 (12-24 kV) peak and off-peak energy cost."""
@@ -93,9 +95,25 @@ class TestThaiEnergyMonitorCore(unittest.TestCase):
         vat_amount = subtotal * VAT_RATE
         total_bill = subtotal + vat_amount
 
-        self.assertAlmostEqual(subtotal, 1508.06, places=2)
-        self.assertAlmostEqual(vat_amount, 105.5642, places=4)
-        self.assertAlmostEqual(total_bill, 1613.6242, places=4)
+        # base 1223.76 + service 24.62 + Ft 350*0.1623 = 56.805
+        self.assertAlmostEqual(subtotal, 1305.185, places=3)
+        self.assertAlmostEqual(vat_amount, 91.36295, places=4)
+        self.assertAlmostEqual(total_bill, 1396.54795, places=4)
+
+    def test_sep_2026_first_200_units_capped_at_3_baht(self) -> None:
+        """Units 1-200 on 1.2 cost 3.00 THB; unit 201 moves to the 4.1584 band."""
+        self.assertAlmostEqual(calculate_tiered_cost(200.0, TARIFF_1_2_TIERS), 600.0, places=4)
+        self.assertAlmostEqual(
+            calculate_tiered_cost(201.0, TARIFF_1_2_TIERS) - calculate_tiered_cost(200.0, TARIFF_1_2_TIERS),
+            4.1584,
+            places=4,
+        )
+        # 1.1 and 1.2 share the same bands above 25 units
+        self.assertEqual(TARIFF_1_1_TIERS[-2:], TARIFF_1_2_TIERS[-2:])
+
+    def test_default_ft_matches_erc_2026(self) -> None:
+        """Default Ft is the ERC May-Dec 2026 value of 16.23 satang/kWh."""
+        self.assertAlmostEqual(DEFAULT_FT_RATE, 0.1623, places=4)
 
     def test_solar_net_billing_riemann_sum(self) -> None:
         """Test Solar Prachachon self-consumption Riemann sum savings & export revenue."""

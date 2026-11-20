@@ -22,7 +22,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from homeassistant.util import dt as dt_util
 
-from .const import ATTRIBUTION, DOMAIN, VERSION
+from .const import ATTRIBUTION, DEFAULT_FT_RATE, DOMAIN, VERSION
 from .coordinator import ThaiEnergyDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -232,7 +232,11 @@ class ThaiEnergyCostSensor(
             "custom_tier3_rate": self.coordinator.config_data.get("custom_tier3_rate"),
             "billing_day": self.entry.data.get("billing_day") or 1,
             "current_day_of_cycle": self.coordinator.get_billing_cycle_day(dt_util.now()),
-            "ft_rate": self.coordinator.config_data.get("ft_rate") or 0.3950,
+            "ft_rate": self.coordinator.config_data.get("ft_rate", DEFAULT_FT_RATE),
+            "tariff_tiers": self.coordinator.data.get("tariff_tiers"),
+            "tou_peak_rate": self.coordinator.data.get("tou_peak_rate"),
+            "tou_offpeak_rate": self.coordinator.data.get("tou_offpeak_rate"),
+            "monthly_service_charge": self.coordinator.data.get("monthly_service_charge"),
             "solar_sellback_rate": self.coordinator.config_data.get("solar_sellback_rate") or 2.20,
             "enable_solar_sellback": self.coordinator.config_data.get("enable_solar_sellback", True),
             "mea_ebill_active": self.entry.data.get("mea_ebill_active") or False,

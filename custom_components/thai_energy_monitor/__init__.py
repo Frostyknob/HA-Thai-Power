@@ -34,6 +34,10 @@ from .const import (
     CONF_BESS_CAPACITY_KWH,
     CONF_BESS_SOLAR_SELLBACK_ACTIVE,
     DEFAULT_ENABLE_SOLAR_SELLBACK,
+    FT_RATE_MAX,
+    FT_RATE_MIN,
+    TARIFF_CATEGORIES,
+    UTILITY_PROVIDERS,
 )
 from .coordinator import ThaiEnergyDataUpdateCoordinator
 
@@ -159,12 +163,25 @@ def fetch_latest_ft_rate_sync() -> float | None:
                 # Sort matching rows by (year, month) descending
                 matching_rows.sort(key=lambda x: (x[0], x[1]), reverse=True)
                 
-                # Find the latest one that is <= today
+                # Only trust a row published for the current month. The MEA
+                # dataset is updated irregularly; falling back to an older row
+                # would silently overwrite a correct manually-entered Ft value.
                 for yr, mo, ft_val in matching_rows:
-                    if yr < current_year or (yr == current_year and mo <= current_month):
+                    if yr == current_year and mo == current_month:
+                        if not (FT_RATE_MIN <= ft_val <= FT_RATE_MAX):
+                            _LOGGER.warning(
+                                "Ignoring implausible Ft value %s from MEA Open Data", ft_val
+                            )
+                            return None
                         return ft_val
-                
-                # No published rate applies to the current month yet
+
+                latest_yr, latest_mo, _ = matching_rows[0]
+                _LOGGER.warning(
+                    "MEA Open Data Ft dataset is stale (latest row %04d-%02d); "
+                    "keeping the configured Ft rate",
+                    latest_yr,
+                    latest_mo,
+                )
                 return None
                 
     except Exception as err:
@@ -309,13 +326,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     SERVICE_CONFIGURE_SETTINGS = "configure_settings"
     SERVICE_SCHEMA_CONFIGURE_SETTINGS = vol.Schema(
         {
-            vol.Required(CONF_UTILITY_PROVIDER): cv.string,
-            vol.Required(CONF_TARIFF_CATEGORY): cv.string,
-            vol.Required(CONF_BILLING_DAY): vol.Coerce(int),
+            vol.Required(CONF_UTILITY_PROVIDER): vol.In(UTILITY_PROVIDERS),
+            vol.Required(CONF_TARIFF_CATEGORY): vol.In(TARIFF_CATEGORIES),
+            vol.Required(CONF_BILLING_DAY): vol.All(vol.Coerce(int), vol.Range(min=1, max=28)),
             vol.Required(CONF_GRID_IMPORT_SENSOR): cv.string,
             vol.Required(CONF_GRID_EXPORT_SENSOR): cv.string,
             vol.Required(CONF_SOLAR_PROD_SENSOR): cv.string,
-            vol.Required(CONF_FT_RATE): vol.Coerce(float),
+            vol.Required(CONF_FT_RATE): vol.All(
+                vol.Coerce(float), vol.Range(min=FT_RATE_MIN, max=FT_RATE_MAX)
+            ),
             vol.Required(CONF_SOLAR_SELLBACK_RATE): vol.Coerce(float),
             vol.Optional(CONF_ENABLE_SOLAR_SELLBACK): vol.Coerce(bool),
             vol.Required(CONF_MEA_EBILL): vol.Coerce(bool),
